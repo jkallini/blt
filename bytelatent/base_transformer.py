@@ -609,13 +609,17 @@ class BaseTransformer(nn.Module, SequenceModelWithOutput):
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, str]] = None,
         attn_impl: str = "sdpa",
+        output_hidden_states: bool = False,
     ):
 
         freq_cis = self.rope_embeddings(seqlen=self.max_seqlen, tok_idx=tok_idx)
 
+        all_hidden_states = [] if output_hidden_states else None
         for i, layer in enumerate(self.layers):
             h = layer(h, freq_cis, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl)
-        return h
+            if output_hidden_states:
+                all_hidden_states.append(h)
+        return h, all_hidden_states
 
     def init_weights(self):
         self.rope_embeddings.reset_parameters()

@@ -109,6 +109,7 @@ class LMTransformer(
         tok_idx: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, torch.Tensor, str]] = None,
         attn_impl: str | None = None,
+        output_hidden_states: bool = False,
     ):
         if attn_impl is None:
             attn_impl = self.attn_impl
@@ -128,13 +129,15 @@ class LMTransformer(
                 eos_id=self.eos_id,
             )
         )
-        h = super().forward(h, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl)
+        h, all_hidden_states = super().forward(h, tok_idx=tok_idx, mask=mask, attn_impl=attn_impl, output_hidden_states=output_hidden_states)
 
         logits = self.output(self.norm(h))
-        if target is not None:
-            return cross_entropy(logits, target)
+
+        out = logits if target is None else cross_entropy(logits, target)
+        if output_hidden_states:
+            return out, all_hidden_states
         else:
-            return logits
+            return out
 
     def reset_parameters(self, init_std=None):
         self.norm.reset_parameters()
