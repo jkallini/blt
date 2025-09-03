@@ -886,6 +886,7 @@ class ByteLatentTransformer(
         tokens: torch.Tensor,
         patch_lengths: Optional[torch.Tensor] = None,
         ngram_ids: Optional[torch.Tensor] = None,
+        output_hidden_states: bool = False,
     ):
         # Ensure ngram_ids is either a tensor or None
         assert (
@@ -970,14 +971,16 @@ class ByteLatentTransformer(
                 local_encoder_embeds = local_encoder_embeds + ngram_embeds
 
         # Local encoder
-        (h_encoder, h_cross), cache_encoder = self.local_encoder(
-            tokens=local_encoder_tokens,
-            embeds=local_encoder_embeds,
-            patch_embeds=None,
-            cross_mask=cross_attn_mask_enc,
-            num_patches=patch_lengths.shape[1],
-            patch_ids=patch_ids,
-        )
+        (h_encoder, h_cross), cache_encoder, local_encoder_hidden_states = \
+            self.local_encoder(
+                tokens=local_encoder_tokens,
+                embeds=local_encoder_embeds,
+                patch_embeds=None,
+                cross_mask=cross_attn_mask_enc,
+                num_patches=patch_lengths.shape[1],
+                patch_ids=patch_ids,
+                output_hidden_states=output_hidden_states,
+            )
 
         # Downsampling
         if not self.cross_attn_encoder:
@@ -1002,9 +1005,10 @@ class ByteLatentTransformer(
         eos_patch_ids = patch_ids[rows, cols]
         global_tokens[rows, eos_patch_ids] = self.eos_id
 
-        h, _ = self.global_transformer(
+        h, _, global_hidden_states = self.global_transformer(
             embeds=h,
             tokens=global_tokens,
+            output_hidden_states=output_hidden_states,
         )
 
         # Unpatching
@@ -1040,13 +1044,17 @@ class ByteLatentTransformer(
             )
 
         # Local decoder
-        output, _ = self.local_decoder(
+        output, _, local_decoder_hidden_states = self.local_decoder(
             embeds=dec_embeds,
             patch_embeds=h,
             tokens=local_decoder_tokens,
             cross_mask=cross_attn_mask_dec,
+            output_hidden_states=output_hidden_states,
         )
-        return output
+        if output_hidden_states:
+            return output, (local_encoder_hidden_states, global_hidden_states, local_decoder_hidden_states)
+        else:
+            return output
 
     def init_weights(self):
         self.local_encoder.init_weights()

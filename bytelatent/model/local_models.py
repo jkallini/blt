@@ -253,6 +253,7 @@ class LocalEncoder(LocalModelBase):
         num_patches: Optional[int] = None,
         patch_ids: Optional[torch.Tensor] = None,
         cache: Optional[List[Tuple[torch.Tensor, torch.Tensor, int]]] = None,
+        output_hidden_states: bool = False,
     ):
         """ """
         bs, seqlen = tokens.shape
@@ -267,12 +268,19 @@ class LocalEncoder(LocalModelBase):
             )
 
         h = self.apply_embedding(tokens, embeds)
+        all_hidden_states = [] if output_hidden_states else None
+        if output_hidden_states:
+            all_hidden_states.append(h)        
+
         freqs_cis = self.rope(seqlen=seqlen) if self.use_rope else None
 
         h = F.dropout(h, p=self.dropout, training=self.training)
 
         for i, layer in enumerate(self.layers):
             h = layer(h, mask=mask, freq_cis=freqs_cis, attn_impl=self.attn_impl)
+            if output_hidden_states:
+                all_hidden_states.append(h)
+
             # check if cross attention should be applied to either all layer or only the last layer
             if self.cross_attn_encoder and (
                 i == len(self.layers) - 1 or self.cross_attn_all_layers_encoder
@@ -282,7 +290,7 @@ class LocalEncoder(LocalModelBase):
                 )
 
         h_residual = patch_embeds if self.cross_attn_encoder else None
-        return (h, h_residual), cache
+        return (h, h_residual), cache, all_hidden_states
 
     def apply_cross_attention(
         self, h, patch_embeds, layer_idx, bs, num_patches, patch_ids, cross_mask
@@ -351,9 +359,11 @@ class LocalDecoder(LocalModelBase):
         mask: Optional[Union["BlockMask", "AttentionBias", torch.Tensor, str]] = None,
         cross_mask: Optional[torch.Tensor] = None,
         cache: Optional[List[Tuple[torch.Tensor, torch.Tensor, int]]] = None,
+        output_hidden_states: bool = False,
     ):
         bs, seqlen = tokens.shape
         assert embeds is not None, "Embeddings must be provided"
+        all_hidden_states = [] if output_hidden_states else None
 
         if mask is None:
             mask = create_causal_mask(
@@ -366,6 +376,8 @@ class LocalDecoder(LocalModelBase):
             )
 
         h = embeds
+        if output_hidden_states:
+            all_hidden_states.append(h)
 
         if self.patch_embedding_projection is not None:
             assert patch_embeds is not None, "Patch embeddings must be passed."
@@ -394,9 +406,11 @@ class LocalDecoder(LocalModelBase):
                 h = h + h_cross
 
             h = layer(h, mask=mask, freq_cis=freqs_cis, attn_impl=self.attn_impl)
+            if output_hidden_states:
+                all_hidden_states.append(h)
 
         h_preds = self.norm(h)
         h_preds = F.dropout(h_preds, p=self.dropout, training=self.training)
         h_preds = self.output(h_preds)
         h_preds = h_preds.float()
-        return h_preds, cache
+        return h_preds, cache, all_hidden_states

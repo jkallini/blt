@@ -169,6 +169,7 @@ class GlobalTransformer(BaseTransformer):
         embeds: Optional[torch.Tensor] = None,
         mask: Optional[Union[BlockMask, AttentionBias, torch.Tensor, str]] = None,
         cache: Optional[List[Tuple[torch.Tensor, torch.Tensor, int]]] = None,
+        output_hidden_states: bool = False,
     ):
         """
         Similar to BaseTransformer.forward, but with an additional embeds argument
@@ -176,7 +177,8 @@ class GlobalTransformer(BaseTransformer):
         """
         bs, seqlen = tokens.shape
 
-        h = embeds
+        h = embeds   
+        h_init = h # Track initial hidden states to return
 
         mask = (
             mask
@@ -195,8 +197,14 @@ class GlobalTransformer(BaseTransformer):
 
         h = F.dropout(h, p=self.dropout, training=self.training)
 
-        h = super().forward(h, tok_idx=tok_idx, mask=mask, attn_impl=self.attn_impl)
-        return h, cache
+        h, all_hidden_states = super().forward(
+            h,
+            tok_idx=tok_idx,
+            mask=mask,
+            attn_impl=self.attn_impl,
+            output_hidden_states=output_hidden_states,
+        )
+        return h, cache, [h_init] + all_hidden_states
 
     def init_weights(self):
         super().init_weights()

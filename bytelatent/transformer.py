@@ -116,6 +116,7 @@ class LMTransformer(
         bsz, seqlen = token_values.shape
 
         h = self.tok_embeddings(token_values)
+        h_init = h # Store initial hidden states to return
 
         mask = (
             mask
@@ -135,7 +136,7 @@ class LMTransformer(
 
         out = logits if target is None else cross_entropy(logits, target)
         if output_hidden_states:
-            return out, all_hidden_states
+            return out, [h_init] + all_hidden_states
         else:
             return out
 
